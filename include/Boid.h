@@ -27,6 +27,8 @@ public:
   void setPos(Vec3f newPos);
   Vec3f getForce();
   void setForce(Vec3f newForce);
+  float getMass();
+  void setMass(float newMass);
   Vec3f getVelocity();
   void setVelocity(Vec3f newVel);
   void resetForce();
@@ -35,6 +37,7 @@ public:
 
 private:
   Vec3f position;
+  float mass;
   Vec3f velocity;
   Vec3f force;
   Mat4f orientation;

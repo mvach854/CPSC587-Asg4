@@ -108,10 +108,18 @@ float WIN_NEAR = 0.01;
 float WIN_FAR = 1000;
 
 /*** Boid variables **/
-vector<Vec3f> boidPositions; // Boid positions
-float avoidance;
-float cohesion;
-float gathering;
+vector<Vec3f> boidGeomPoints; // Points to draw (3/boid to make a triangle)
+float rA; // radius of avoidance
+float rC; // radius of cohesion
+float rG; // radius of gathering
+float Fmax; // max force allowed
+float Vmax; // max velocity allowed
+
+// Boid object
+Boid b;
+
+// Bounding box
+float edge = 50; // from centre of box
 
 //==================== FUNCTION DECLARATIONS ====================//
 void displayFunc();
@@ -143,6 +151,12 @@ void reloadColorUniform(float r, float g, float b);
 std::string GL_ERROR();
 int main(int, char **);
 
+Vec3f clamp(Vec3f f, float fmax);
+float favoid(float distance);
+float fcohesion(float distance);
+float fgather(float distance);
+void keepInBounds(Boid* b);
+void getBoidGeomPoints();
 void readFile(string filename);
 
 //==================== FUNCTION DEFINITIONS ====================//
@@ -164,7 +178,8 @@ void displayFunc() {
   // and attribute config of buffers
   glBindVertexArray(vaoID);
   // Draw Boids, start at vertex 0, draw 3 of them (for every boid)
-  glDrawArrays(GL_TRIANGLE_STRIP, 0, 3*boidPositions.size());
+
+  glDrawArrays(GL_TRIANGLES, 0, boidGeomPoints.size());
 /*
   // ==== DRAW box ===== //
   MVP = P * V * box_M;
@@ -183,8 +198,8 @@ void displayFunc() {
 void loadBoidGeometryToGPU() {
   glBindBuffer(GL_ARRAY_BUFFER, vertBufferID);
   glBufferData(GL_ARRAY_BUFFER,
-               sizeof(Vec3f) * boidPositions.size(), // byte size of Vec3f
-               boidPositions.data(),      // pointer (Vec3f*) to contents of verts
+               sizeof(Vec3f) * boidGeomPoints.size(), // byte size of Vec3f
+               boidGeomPoints.data(),      // pointer (Vec3f*) to contents of verts
                GL_STATIC_DRAW);   // Usage pattern of GPU buffer
 }
 /* Not being used currently
@@ -309,11 +324,13 @@ void init() {
   glEnable(GL_DEPTH_TEST);
   glPointSize(50);
 
-  camera = Camera(Vec3f{0, 0, 10}, Vec3f{0, 0, -1}, Vec3f{0, 1, 0});
+  camera = Camera(Vec3f{0, 0, 90}, Vec3f{0, 0, -1}, Vec3f{0, 1, 0});
 
   // SETUP SHADERS, BUFFERS, VAOs
   generateIDs();
   setupVAO();
+
+  getBoidGeomPoints();
   loadBoidGeometryToGPU();
   //loadBoxGeometryToGPU();
 
@@ -369,17 +386,79 @@ int main(int argc, char **argv) {
   // Initialize all the geometry, and load it once to the GPU
   init(); // our own initialize stuff func
 
-  float t = 0;
-  float deltaT = 0.001f;
+  // Variables needed in loop
+  float deltaT = 1.f;
+  int i;
+  int j;
+  float dist; // used for distance between two boids
+  Vec3f dir; // used to hold the direction between two boids
+  Vec3f Xi; // position of boid i
+  Vec3f Xj; // position of boid j
+  Vec3f F; // force being accumulated
+  Vec3f V;
+  Boid* boidi;
 
-  //
+  // Main running window loop
   while (glfwGetKey(window, GLFW_KEY_ESCAPE) != GLFW_PRESS &&
          !glfwWindowShouldClose(window)) {
 
     if (g_play) {
-      t += deltaT;
-      animateBoid(t);
+  //    for(int iter = 0; iter < 10; ++iter) {
+        // go through every pair and accumulate forces
+        for (i = 0; i < b.Boids.size(); i++) {
+          for (j = i + 1; j < b.Boids.size(); j++) {
+            Xi = b.Boids[i]->getPos();
+            Xj = b.Boids[j]->getPos();
+            dist = Xi.distance(Xj); // distance between the current pair
+            dir = (Xi - Xj)/dist;
+          //  cout << "distance bw i.dis(j): " << dist << endl;
+          // cout << "dir is " << dir << endl;
+            if (dist < rA) {
+              F = favoid(dist) * dir;
+      //      } else if (dist < rC) {
+    //          F = fcohesion(dist) * dir; // * Vc***
+            } else if (dist < rG) {
+              F = -favoid(dist) * dir;
+            } else {
+              F = Vec3f(0.f, 0.f, 0.f); // the two boids ignore each other
+            }
+    //        cout << "final F: " << F << endl;
+
+            b.Boids[i]->setForce(b.Boids[i]->getForce() + F); // add the total force to one boid
+            b.Boids[j]->setForce(b.Boids[j]->getForce() - F); // subtract the total force from the other
+          }
+        }
+
+        // go through every boid and update velocity and position
+        for (i = 0; i < b.Boids.size(); i++) {
+          boidi = b.Boids[i];
+          F = boidi->getForce();
+  //        cout << "force of boid " << i << " is " << F << endl;
+          // add gravity
+          F = clamp(F, 5); // change to Fmax read in
+  //        cout << "clamped f " << i << " is " << F << endl;
+
+          // integrate
+          // below, 1 is used as the mass for this simulation
+          boidi->setVelocity(boidi->getVelocity() + (F/boidi->getMass())*deltaT); // F/m*dt gives new velocity
+          V = boidi->getVelocity();
+    //      cout << "new vel of boid " << i << " is " << V << endl;
+          V = clamp(V, 5);
+  //        cout << "clamped v " << i << " is " << V << endl;
+          boidi->setVelocity(V);
+          boidi->setPos(boidi->getPos() + (V*deltaT));
+//          cout << "new pos of boid " << i << " is " << boidi->getPos() << endl;
+          keepInBounds(boidi);
+          boidi->resetForce();
+          // update (Mi);
+          //  animateBoid(t); // if needed for later
+        }
+  //    }
     }
+
+    // Make geometry based on the current positions of all boids
+    getBoidGeomPoints();
+    loadBoidGeometryToGPU();
 
     displayFunc();
     moveCamera();
@@ -406,12 +485,95 @@ void animateBoid(float t) {
   reloadMVPUniform();
 }
 
+Vec3f clamp(Vec3f f, float fmax) {
+  if (f.x() > fmax) {
+    f.x() = fmax;
+  }
+  if (f.y() > fmax) {
+    f.y() = fmax;
+  }
+  if (f.z() > fmax) {
+    f.z() = fmax;
+  }
+  return f;
+}
+
+float favoid(float distance) {
+  if (distance <= 1) {
+    return 0.f;
+  } else {
+    return (1/(pow(distance, 2))); // 1/x^2 function
+  }                                // return force value of function
+}
+
+float fcohesion(float distance) {
+  // change this
+  return (1/(pow(distance, 2))); // 1/x^2 function
+}                                // return force value of function
+
+float fgather(float distance) {
+  if (distance <= 1) {
+    return 0.f;
+  } else {
+    return (1/(pow(distance, 2))); // 1/x^2 function
+  }                                // return force value of function
+}
+
+void keepInBounds(Boid* b) {
+  Vec3f pos = b->getPos();
+  Vec3f vel = b->getVelocity();
+
+  if (pos.x() > edge) {
+    pos.x() = edge;
+    vel.x() = -vel.x();
+  } else if (pos.x() < -edge) {
+    pos.x() = -edge;
+    vel.x() = -vel.x();
+  }
+
+  if (pos.y() > edge) {
+    pos.y() = edge;
+    vel.y() = -vel.y();
+  } else if (pos.y() < -edge) {
+    pos.y() = -edge;
+    vel.y() = -vel.y();
+  }
+
+  if (pos.z() > edge) {
+    pos.z() = edge;
+    vel.z() = -vel.z();
+  } else if (pos.z() < -edge) {
+    pos.z() = -edge;
+    vel.z() = -vel.z();
+  }
+  b->setPos(pos);
+  b->setVelocity(vel);
+}
+
+void getBoidGeomPoints() {
+  boidGeomPoints.clear();
+  Vec3f boidPos;
+
+  for (int i = 0; i < b.Boids.size(); i++) {
+    boidPos = b.Boids[i]->getPos();
+    boidGeomPoints.push_back(Vec3f(boidPos.x()-0.5f, boidPos.y(), boidPos.z()));
+    boidGeomPoints.push_back(Vec3f(boidPos.x()+1.f, boidPos.y()+0.5f, boidPos.z()));
+    boidGeomPoints.push_back(Vec3f(boidPos.x()+1.f, boidPos.y()-0.5f, boidPos.z()));
+    // Push the nose (x position) out 0.5 to the left (x-0.5),
+    // and the tail points 2 back (x+2) and 1 up (y+1) and
+    // down (y-1), respectively
+  }
+}
+
 void readFile(string filename) {
   ifstream file(filename);
   char input;
   float x;
   float y;
   float z;
+  Boid *boid;
+
+  b.Boids.clear();
 
   if (file.is_open()) {
     file >> input;
@@ -422,20 +584,20 @@ void readFile(string filename) {
         file >> num;
         for (int i = 0; i < num; i++) {
           file >> x >> y >> z;
-          boidPositions.push_back(Vec3f(x, y, z));
-          cout << x << " " << y << " " << z << endl;
+          boid = new Boid(Vec3f(x,y,z));
+          b.Boids.push_back(boid);
         }
       } else if(input == 'A') {
-          file >> avoidance;
-          cout << "avoidance is " << avoidance << endl;
+          file >> rA;
       } else if(input == 'C') {
-        file >> cohesion;
-        cout << "cohesion is " << cohesion << endl;
+          file >> rC;
       } else if(input == 'G') {
-        file >> gathering;
-        cout << "gathering is " << gathering << endl;
-      }
-
+          file >> rG;
+      } /* else if(input == 'F') {
+          file >> Fmax;
+      } else if(input == 'V') {
+          file >> Vmax;
+      } */
       file >> input;
     }
     file.close();
@@ -444,7 +606,6 @@ void readFile(string filename) {
     cout << "Unable to open file!" << endl;
   }
 }
-
 
 //==================== CALLBACK FUNCTIONS ====================//
 

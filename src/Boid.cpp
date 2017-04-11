@@ -8,6 +8,7 @@
 // ======================== CONSTRUCTORS ============================//
 Boid::Boid(Vec3f pos) {
   position = pos;
+  mass = 1.f;
   velocity = Vec3f(0,0,0);
   force = Vec3f(0,0,0);
   orientation = IdentityMatrix();
@@ -29,6 +30,14 @@ Vec3f Boid::getForce() {
 
 void Boid::setForce(Vec3f newForce) {
   force = newForce;
+}
+
+float Boid::getMass() {
+  return mass;
+}
+
+void Boid::setMass(float newMass) {
+  mass = newMass;
 }
 
 Vec3f Boid::getVelocity() {
