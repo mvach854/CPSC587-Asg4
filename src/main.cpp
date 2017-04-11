@@ -109,11 +109,15 @@ float WIN_FAR = 1000;
 
 /*** Boid variables **/
 vector<Vec3f> boidGeomPoints; // Points to draw (3/boid to make a triangle)
-float rA; // radius of avoidance
-float rC; // radius of cohesion
-float rG; // radius of gathering
-float Fmax; // max force allowed
-float Vmax; // max velocity allowed
+float rA = 0.f; // radius of avoidance
+float rC = 0.f; // radius of cohesion
+float rG = 0.f; // radius of gathering
+float wA = 0.f; // weight of avoidance
+float wC = 0.f; // weight of cohesion
+float wG = 0.f; // weight of gathering
+float Fmax = 0.f; // max force allowed
+float Vmax = 0.f; // max velocity allowed
+int numBoids = 0; // number of boids to be in the simulation
 
 // Boid object
 Boid b;
@@ -394,8 +398,10 @@ int main(int argc, char **argv) {
   Vec3f dir; // used to hold the direction between two boids
   Vec3f Xi; // position of boid i
   Vec3f Xj; // position of boid j
-  Vec3f F; // force being accumulated
-  Vec3f V;
+  Vec3f F = Vec3f(0,0,0); // force being accumulated
+  Vec3f V = Vec3f(0,0,0);
+  Vec3f Vc = Vec3f(0,0,0);
+  int r = 0;
   Boid* boidi;
 
   // Main running window loop
@@ -404,8 +410,15 @@ int main(int argc, char **argv) {
 
     if (g_play) {
   //    for(int iter = 0; iter < 10; ++iter) {
+
         // go through every pair and accumulate forces
         for (i = 0; i < b.Boids.size(); i++) {
+          // get average of boids within rC
+          for (j + 1; j < b.Boids.size(); j++) {
+            V += b.Boids[i]->getVelocity();
+          }
+          V = V/b.Boids.size();
+
           for (j = i + 1; j < b.Boids.size(); j++) {
             Xi = b.Boids[i]->getPos();
             Xj = b.Boids[j]->getPos();
@@ -414,9 +427,12 @@ int main(int argc, char **argv) {
           //  cout << "distance bw i.dis(j): " << dist << endl;
           // cout << "dir is " << dir << endl;
             if (dist < rA) {
+              r = dist / rA;
+              // F = pow((1-r), 3) * (3r + 1)
               F = favoid(dist) * dir;
-      //      } else if (dist < rC) {
-    //          F = fcohesion(dist) * dir; // * Vc***
+            } else if (dist < rC) {
+      //        Vc = V - b.Boids[i]->getVelocity();
+      //        F = favoid(dist) * Vc; // * Vc***
             } else if (dist < rG) {
               F = -favoid(dist) * dir;
             } else {
@@ -580,9 +596,8 @@ void readFile(string filename) {
 
     while (!file.eof()) {
       if (input == 'N') {
-        int num;
-        file >> num;
-        for (int i = 0; i < num; i++) {
+        file >> numBoids;
+        for (int i = 0; i < numBoids; i++) {
           file >> x >> y >> z;
           boid = new Boid(Vec3f(x,y,z));
           b.Boids.push_back(boid);
@@ -593,11 +608,17 @@ void readFile(string filename) {
           file >> rC;
       } else if(input == 'G') {
           file >> rG;
-      } /* else if(input == 'F') {
+      }  else if(input == 'F') {
           file >> Fmax;
       } else if(input == 'V') {
           file >> Vmax;
-      } */
+      } else if(input == 'D') {
+          file >> wA;
+      } else if(input == 'H') {
+          file >> wC;
+      } else if(input == 'T') {
+          file >> wG;
+      }
       file >> input;
     }
     file.close();
