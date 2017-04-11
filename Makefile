@@ -16,7 +16,7 @@ CFLAGS=-c -std=c++0x -O3 -Wall
 
 LIBS = `pkg-config --libs glfw3 gl` -ldl
 
-SOURCES=$(wildcard $(SRCDIR)/*cpp) 
+SOURCES=$(wildcard $(SRCDIR)/*cpp)
 OBJECTS=$(addprefix $(OBJDIR)/,$(notdir $(SOURCES:.cpp=.o)))
 
 EXECUTABLE=ParticleSystem
@@ -30,9 +30,8 @@ $(OBJDIR)/%.o: $(SRCDIR)/%.cpp
 	$(CC) $(CFLAGS) $< -o $@ $(INCDIR)
 
 # GLAD Specific Stuff
-$(OBJDIR)/glad.o: middleware/glad/src/glad.c 
+$(OBJDIR)/glad.o: middleware/glad/src/glad.c
 	$(CC) $(CFLAGS) $< -o $@ $(INCDIR)
 
 clean:
 	rm $(OBJDIR)/*.o $(EXECUTABLE)
-

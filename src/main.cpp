@@ -15,7 +15,7 @@
  *
  * This is a (very) basic program to
  * 1) load shaders from external files, and make a shader program
- * 2) make Vertex Array Object and Vertex Buffer Object for the quad
+ * 2) make Vertex Array Object and Vertex Buffer Object for the boid
  *
  * take a look at the following sites for further readings:
  * opengl-tutorial.org -> The first triangle (New OpenGL, great start)
@@ -40,6 +40,8 @@
  */
 
 #include <iostream>
+#include <fstream>
+#include <string>
 #include <cmath>
 #include <chrono>
 #include <limits>
@@ -61,20 +63,22 @@ using namespace std;
 *	appropriate classes or abstractions.
 */
 
+const Vec3f GRAVITY = Vec3f(0,-9.81,0); // gravity
+
 // Drawing Program
 GLuint basicProgramID;
 
-// Data needed for Quad
+// Data needed for Boid
 GLuint vaoID;
 GLuint vertBufferID;
 Mat4f M;
 
-// Data needed for Line
-GLuint line_vaoID;
-GLuint line_vertBufferID;
-Mat4f line_M;
+// Data needed for Box
+GLuint box_vaoID;
+GLuint box_vertBufferID;
+Mat4f box_M;
 
-// Only one camera so only one veiw and perspective matrix are needed.
+// Only one camera so only one view and perspective matrix are needed.
 Mat4f V;
 Mat4f P;
 
@@ -82,7 +86,7 @@ Mat4f P;
 // When drawing different objects, update M and MVP = M * V * P
 Mat4f MVP;
 
-// Camera and veiwing Stuff
+// Camera and viewing Stuff
 Camera camera;
 int g_moveUpDown = 0;
 int g_moveLeftRight = 0;
@@ -103,6 +107,12 @@ float WIN_FOV = 60;
 float WIN_NEAR = 0.01;
 float WIN_FAR = 1000;
 
+/*** Boid variables **/
+vector<Vec3f> boidPositions; // Boid positions
+float avoidance;
+float cohesion;
+float gathering;
+
 //==================== FUNCTION DECLARATIONS ====================//
 void displayFunc();
 void resizeFunc();
@@ -110,7 +120,7 @@ void init();
 void generateIDs();
 void deleteIDs();
 void setupVAO();
-void loadQuadGeometryToGPU();
+void loadBoidGeometryToGPU();
 void reloadProjectionMatrix();
 void loadModelViewMatrix();
 void setupModelViewProjectionTransform();
@@ -126,22 +136,26 @@ void windowMouseButtonFunc(GLFWwindow *window, int button, int action,
 void windowMouseMotionFunc(GLFWwindow *window, double x, double y);
 void windowKeyFunc(GLFWwindow *window, int key, int scancode, int action,
                    int mods);
-void animateQuad(float t);
+void animateBoid(float t);
 void moveCamera();
 void reloadMVPUniform();
 void reloadColorUniform(float r, float g, float b);
 std::string GL_ERROR();
 int main(int, char **);
 
+void readFile(string filename);
+
 //==================== FUNCTION DEFINITIONS ====================//
 
 void displayFunc() {
+  // Make background grayish
+  glClearColor(0.5, 0.5, 0.5, 1.0);
   glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
   // Use our shader
   glUseProgram(basicProgramID);
 
-  // ===== DRAW QUAD ====== //
+  // ===== DRAW BOID ====== //
   MVP = P * V * M;
   reloadMVPUniform();
   reloadColorUniform(1, 0, 1);
@@ -149,65 +163,45 @@ void displayFunc() {
   // Use VAO that holds buffer bindings
   // and attribute config of buffers
   glBindVertexArray(vaoID);
-  // Draw Quads, start at vertex 0, draw 4 of them (for a quad)
-  glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
-
-  // ==== DRAW LINE ===== //
-  MVP = P * V * line_M;
+  // Draw Boids, start at vertex 0, draw 3 of them (for every boid)
+  glDrawArrays(GL_TRIANGLE_STRIP, 0, 3*boidPositions.size());
+/*
+  // ==== DRAW box ===== //
+  MVP = P * V * box_M;
   reloadMVPUniform();
 
   reloadColorUniform(0, 1, 1);
 
   // Use VAO that holds buffer bindings
   // and attribute config of buffers
-  glBindVertexArray(line_vaoID);
-  // Draw lines
+  glBindVertexArray(box_vaoID);
+  // Draw boxs
   glDrawArrays(GL_LINES, 0, 2);
-
+*/
 }
 
-void animateQuad(float t) {
-  M = RotateAboutYMatrix(100 * t);
-
-  float s = (std::sin(t) + 1.f) / 2.f;
-  float x = (1 - s) * (10) + s * (-10);
-
-  M = TranslateMatrix(x, 0, 0) * M;
-
-  setupModelViewProjectionTransform();
-  reloadMVPUniform();
-}
-
-void loadQuadGeometryToGPU() {
-  // Just basic layout of floats, for a quad
-  // 3 floats per vertex, 4 vertices
-  std::vector<Vec3f> verts;
-  verts.push_back(Vec3f(-1, -1, 0));
-  verts.push_back(Vec3f(-1, 1, 0));
-  verts.push_back(Vec3f(1, -1, 0));
-  verts.push_back(Vec3f(1, 1, 0));
-
+void loadBoidGeometryToGPU() {
   glBindBuffer(GL_ARRAY_BUFFER, vertBufferID);
   glBufferData(GL_ARRAY_BUFFER,
-               sizeof(Vec3f) * 4, // byte size of Vec3f, 4 of them
-               verts.data(),      // pointer (Vec3f*) to contents of verts
+               sizeof(Vec3f) * boidPositions.size(), // byte size of Vec3f
+               boidPositions.data(),      // pointer (Vec3f*) to contents of verts
                GL_STATIC_DRAW);   // Usage pattern of GPU buffer
 }
-
-void loadLineGeometryToGPU() {
-  // Just basic layout of floats, for a quad
+/* Not being used currently
+void loadBoxGeometryToGPU() {
+  // Just basic layout of floats, for a boid
   // 3 floats per vertex, 4 vertices
   std::vector<Vec3f> verts;
   verts.push_back(Vec3f(-10, 0, 0));
   verts.push_back(Vec3f(10, 0, 0));
 
-  glBindBuffer(GL_ARRAY_BUFFER, line_vertBufferID);
+  glBindBuffer(GL_ARRAY_BUFFER, box_vertBufferID);
   glBufferData(GL_ARRAY_BUFFER,
                sizeof(Vec3f) * 2, // byte size of Vec3f, 4 of them
                verts.data(),      // pointer (Vec3f*) to contents of verts
                GL_STATIC_DRAW);   // Usage pattern of GPU buffer
 }
-
+*/
 void setupVAO() {
   glBindVertexArray(vaoID);
 
@@ -220,11 +214,11 @@ void setupVAO() {
                         0,        // stride
                         (void *)0 // array buffer offset
                         );
-
-  glBindVertexArray(line_vaoID);
+/*
+  glBindVertexArray(box_vaoID);
 
   glEnableVertexAttribArray(0); // match layout # in shader
-  glBindBuffer(GL_ARRAY_BUFFER, line_vertBufferID);
+  glBindBuffer(GL_ARRAY_BUFFER, box_vertBufferID);
   glVertexAttribPointer(0,        // attribute layout # above
                         3,        // # of components (ie XYZ )
                         GL_FLOAT, // type of components
@@ -234,6 +228,7 @@ void setupVAO() {
                         );
 
   glBindVertexArray(0); // reset to default
+  */
 }
 
 void reloadProjectionMatrix() {
@@ -253,7 +248,7 @@ void reloadProjectionMatrix() {
 
 void loadModelViewMatrix() {
   M = IdentityMatrix();
-  line_M = IdentityMatrix();
+  box_M = IdentityMatrix();
   // view doesn't change, but if it did you would use this
   V = camera.lookatMatrix();
 }
@@ -261,13 +256,18 @@ void loadModelViewMatrix() {
 void reloadViewMatrix() { V = camera.lookatMatrix(); }
 
 void setupModelViewProjectionTransform() {
-  MVP = P * V * M; // transforms vertices from right to left (odd huh?)
+  MVP = P * V * M; // transforms vertices from right to left (odd huh?) :) This is funny
 }
 
 void reloadMVPUniform() {
   GLint id = glGetUniformLocation(basicProgramID, "MVP");
 
   glUseProgram(basicProgramID);
+
+  // Introduce instancing somewhere here:
+  // Call glUniformMatrix4fv and then perform a new translate and rotation
+  // matrix on the boid and then draw
+  // What is this saving though?
   glUniformMatrix4fv(id,        // ID
                      1,         // only 1 matrix
                      GL_TRUE,   // transpose matrix, Mat4f is row major
@@ -292,8 +292,8 @@ void generateIDs() {
   // VAO and buffer IDs given from OpenGL
   glGenVertexArrays(1, &vaoID);
   glGenBuffers(1, &vertBufferID);
-  glGenVertexArrays(1, &line_vaoID);
-  glGenBuffers(1, &line_vertBufferID);
+  /*glGenVertexArrays(1, &box_vaoID);
+  glGenBuffers(1, &box_vertBufferID);*/
 }
 
 void deleteIDs() {
@@ -301,22 +301,21 @@ void deleteIDs() {
 
   glDeleteVertexArrays(1, &vaoID);
   glDeleteBuffers(1, &vertBufferID);
-  glDeleteVertexArrays(1, &line_vaoID);
-  glDeleteBuffers(1, &line_vertBufferID);
+/*  glDeleteVertexArrays(1, &box_vaoID);
+  glDeleteBuffers(1, &box_vertBufferID);*/
 }
 
 void init() {
   glEnable(GL_DEPTH_TEST);
   glPointSize(50);
 
-  camera = Camera(Vec3f{0, 0, 5}, Vec3f{0, 0, -1}, Vec3f{0, 1, 0});
+  camera = Camera(Vec3f{0, 0, 10}, Vec3f{0, 0, -1}, Vec3f{0, 1, 0});
 
   // SETUP SHADERS, BUFFERS, VAOs
-
   generateIDs();
   setupVAO();
-  loadQuadGeometryToGPU();
-  loadLineGeometryToGPU();
+  loadBoidGeometryToGPU();
+  //loadBoxGeometryToGPU();
 
   loadModelViewMatrix();
   reloadProjectionMatrix();
@@ -338,7 +337,7 @@ int main(int argc, char **argv) {
   glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
 
   window =
-      glfwCreateWindow(WIN_WIDTH, WIN_HEIGHT, "CPSC 587/687 Tut03", NULL, NULL);
+      glfwCreateWindow(WIN_WIDTH, WIN_HEIGHT, "CPSC 587/687 Boid Simulation", NULL, NULL);
   if (!window) {
     glfwTerminate();
     exit(EXIT_FAILURE);
@@ -364,18 +363,22 @@ int main(int argc, char **argv) {
   std::cout << "GL Version: :" << glGetString(GL_VERSION) << std::endl;
   std::cout << GL_ERROR() << std::endl;
 
+  // Read initial states and parameters
+  readFile("boids1.txt");
+
   // Initialize all the geometry, and load it once to the GPU
   init(); // our own initialize stuff func
 
   float t = 0;
-  float dt = 0.01;
+  float deltaT = 0.001f;
 
+  //
   while (glfwGetKey(window, GLFW_KEY_ESCAPE) != GLFW_PRESS &&
          !glfwWindowShouldClose(window)) {
 
     if (g_play) {
-      t += dt;
-      animateQuad(t);
+      t += deltaT;
+      animateBoid(t);
     }
 
     displayFunc();
@@ -390,6 +393,58 @@ int main(int argc, char **argv) {
 
   return 0;
 }
+
+void animateBoid(float t) {
+  M = RotateAboutYMatrix(100 * t);
+
+  float s = (std::sin(t) + 1.f) / 2.f;
+  float x = (1 - s) * (10) + s * (-10);
+
+  M = TranslateMatrix(x, 0, 0) * M;
+
+  setupModelViewProjectionTransform();
+  reloadMVPUniform();
+}
+
+void readFile(string filename) {
+  ifstream file(filename);
+  char input;
+  float x;
+  float y;
+  float z;
+
+  if (file.is_open()) {
+    file >> input;
+
+    while (!file.eof()) {
+      if (input == 'N') {
+        int num;
+        file >> num;
+        for (int i = 0; i < num; i++) {
+          file >> x >> y >> z;
+          boidPositions.push_back(Vec3f(x, y, z));
+          cout << x << " " << y << " " << z << endl;
+        }
+      } else if(input == 'A') {
+          file >> avoidance;
+          cout << "avoidance is " << avoidance << endl;
+      } else if(input == 'C') {
+        file >> cohesion;
+        cout << "cohesion is " << cohesion << endl;
+      } else if(input == 'G') {
+        file >> gathering;
+        cout << "gathering is " << gathering << endl;
+      }
+
+      file >> input;
+    }
+    file.close();
+  }
+  else {
+    cout << "Unable to open file!" << endl;
+  }
+}
+
 
 //==================== CALLBACK FUNCTIONS ====================//
 

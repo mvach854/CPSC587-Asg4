@@ -11,6 +11,8 @@
 #include <iostream>
 #include "Vec3f.h"
 #include <vector>
+#include "Mat4f.h"
+#include "OpenGLMatrixTools.h"
 
 using namespace std;
 
@@ -20,21 +22,22 @@ class Boid {
 public:
   vector<Boid*> Boids;
   Boid() {};
-  Boid(float m, Vec3f pos);
+  Boid(Vec3f pos);
   Vec3f getPos();
   void setPos(Vec3f newPos);
   Vec3f getForce();
   void setForce(Vec3f newForce);
   Vec3f getVelocity();
   void setVelocity(Vec3f newVel);
-  float getBoid();
   void resetForce();
+  Mat4f getOrientation();
+  void setOrientation(Mat4f newOrien);
 
 private:
-  float Boid;
   Vec3f position;
   Vec3f velocity;
   Vec3f force;
+  Mat4f orientation;
 };
 
 #endif // BOID_H

@@ -41,29 +41,27 @@ void loadVec3fFromFile( VectorContainerVec3f & vecs, std::string const & fileNam
 	vecs.clear();
 
 	while( getline( file, line ) )
-	{	
+	{
 		++lineNum;
-		
-		// remove comments	
+
+		// remove comments
 		index = line.find_first_of( "#" );
 		if( index != string::npos )
 		{
 			line.erase( index, string::npos );
 		}
 
-		// removes leading/tailing junk
-		line.erase( 0, line.find_first_not_of( " \t\r\n\v\f" ) );
 		index = line.find_last_not_of( " \t\r\n\v\f" )+1;
 		if( index != string::npos )
 		{
 			line.erase( index, string::npos );
 		}
-		
+
 		if( line.empty() )
 		{
 			continue; // empty or commented out line
 		}
-		
+
 		ss.str( line );
 		ss.clear();
 
@@ -78,7 +76,7 @@ void loadVec3fFromFile( VectorContainerVec3f & vecs, std::string const & fileNam
 							 + " (line: "
 							 + std::to_string(lineNum)
 							 +  ")" );
-			}	
+			}
 			else
 			{
 				vecs.push_back( v );

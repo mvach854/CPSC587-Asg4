@@ -6,11 +6,11 @@
 #include "Boid.h"
 
 // ======================== CONSTRUCTORS ============================//
-Boid::Boid(float m, Vec3f pos) {
-  Boid = m;
+Boid::Boid(Vec3f pos) {
   position = pos;
   velocity = Vec3f(0,0,0);
   force = Vec3f(0,0,0);
+  orientation = IdentityMatrix();
 }
 // ==========================================================================//
 
@@ -39,12 +39,16 @@ void Boid::setVelocity(Vec3f newVel) {
   velocity = newVel;
 }
 
-float Boid::getBoid() {
-  return Boid;
-}
-
 void Boid::resetForce() {
   force = Vec3f(0,0,0);
+}
+
+Mat4f Boid::getOrientation() {
+  return orientation;
+}
+
+void Boid::setOrientation(Mat4f newOrien) {
+  orientation = newOrien;
 }
 
 // ==========================================================================//

@@ -13,3 +13,6 @@ Run: ./ParticleSystem - to run the program (an executable has been provided)
 *As well as pause/play being enabled (space bar)*
 
 
+
+== File format ==
+
