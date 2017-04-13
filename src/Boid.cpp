@@ -9,8 +9,8 @@
 Boid::Boid(Vec3f pos) {
   position = pos;
   mass = 1.f;
-  velocity = Vec3f(0,0,0);
-  force = Vec3f(0,0,0);
+  velocity = Vec3f(0.f,0.f,0.f);
+  force = Vec3f(0.f,0.f,0.f);
   orientation = IdentityMatrix();
 }
 // ==========================================================================//
@@ -49,7 +49,7 @@ void Boid::setVelocity(Vec3f newVel) {
 }
 
 void Boid::resetForce() {
-  force = Vec3f(0,0,0);
+  force = Vec3f(0.f,0.f,0.f);
 }
 
 Mat4f Boid::getOrientation() {

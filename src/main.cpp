@@ -49,6 +49,8 @@
 #include "glad/glad.h"
 #include <GLFW/glfw3.h>
 
+#include <glm/gtc/type_ptr.hpp>
+
 #include "ShaderTools.h"
 #include "Vec3f.h"
 #include "Mat4f.h"
@@ -74,9 +76,9 @@ GLuint vertBufferID;
 Mat4f M;
 
 // Data needed for Box
-GLuint box_vaoID;
-GLuint box_vertBufferID;
-Mat4f box_M;
+GLuint ball_vaoID;
+GLuint ball_vertBufferID;
+Mat4f ball_M;
 
 // Only one camera so only one view and perspective matrix are needed.
 Mat4f V;
@@ -122,8 +124,13 @@ int numBoids = 0; // number of boids to be in the simulation
 // Boid object
 Boid b;
 
+// Locations of instances
+//vector<Vec3f> translations;
+
+vector<Vec3f> sphere;
+
 // Bounding box
-float edge = 50; // from centre of box
+float edge = 0; // from centre of box
 
 //==================== FUNCTION DECLARATIONS ====================//
 void displayFunc();
@@ -133,6 +140,7 @@ void generateIDs();
 void deleteIDs();
 void setupVAO();
 void loadBoidGeometryToGPU();
+void loadBallGeometryToGPU();
 void reloadProjectionMatrix();
 void loadModelViewMatrix();
 void setupModelViewProjectionTransform();
@@ -160,14 +168,16 @@ float favoid(float distance);
 float fcohesion(float distance);
 float fgather(float distance);
 void keepInBounds(Boid* b);
+void initBoids();
 void getBoidGeomPoints();
 void readFile(string filename);
+void readObj(string filename);
 
 //==================== FUNCTION DEFINITIONS ====================//
 
 void displayFunc() {
   // Make background grayish
-  glClearColor(0.5, 0.5, 0.5, 1.0);
+  glClearColor(0.4f, 0.f, 0.8f, 1.0f);
   glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
   // Use our shader
@@ -176,54 +186,108 @@ void displayFunc() {
   // ===== DRAW BOID ====== //
   MVP = P * V * M;
   reloadMVPUniform();
-  reloadColorUniform(1, 0, 1);
+  reloadColorUniform(0.2f, 1.f, 0.2f);
 
   // Use VAO that holds buffer bindings
   // and attribute config of buffers
   glBindVertexArray(vaoID);
   // Draw Boids, start at vertex 0, draw 3 of them (for every boid)
-
+  // Instancing
+  // glDrawArraysInstanced(GL_TRIANGLES, 0, 3, translations.size());
   glDrawArrays(GL_TRIANGLES, 0, boidGeomPoints.size());
-/*
-  // ==== DRAW box ===== //
-  MVP = P * V * box_M;
+  glBindVertexArray(0);
+
+  // ==== DRAW ball ===== //
+  glPointSize(50);
+  MVP = P * V * ball_M;
   reloadMVPUniform();
 
-  reloadColorUniform(0, 1, 1);
+  reloadColorUniform(1, 1, 1);
 
   // Use VAO that holds buffer bindings
   // and attribute config of buffers
-  glBindVertexArray(box_vaoID);
+  glBindVertexArray(ball_vaoID);
   // Draw boxs
-  glDrawArrays(GL_LINES, 0, 2);
-*/
+  glDrawArrays(GL_TRIANGLES, 0, sphere.size());
 }
 
 void loadBoidGeometryToGPU() {
+  // instancing testing with hardcoded 2D positions of a box
+  // float boidVertices[] = {
+  //   // positions    // Colors
+  //   -0.05f, 0.05f,  1.f, 0.f, 0.f,
+  //   0.05f, -0.05f,  0.f, 1.f, 0.f,
+  //   -0.05f, -0.05f,  0.f, 0.f, 1.f,
+  //
+  //   -0.05f, 0.05f,  1.f, 0.f, 0.f,
+  //   0.05f, -0.05f,  0.f, 1.f, 0.f,
+  //   0.05f, 0.05f,  0.f, 1.f, 1.f,
+  // };
+
+
   glBindBuffer(GL_ARRAY_BUFFER, vertBufferID);
   glBufferData(GL_ARRAY_BUFFER,
+        //       sizeof(boidVertices), // byte size of Vec3f
                sizeof(Vec3f) * boidGeomPoints.size(), // byte size of Vec3f
+        //       boidVertices,      // pointer (Vec3f*) to contents of verts
                boidGeomPoints.data(),      // pointer (Vec3f*) to contents of verts
                GL_STATIC_DRAW);   // Usage pattern of GPU buffer
 }
-/* Not being used currently
-void loadBoxGeometryToGPU() {
-  // Just basic layout of floats, for a boid
-  // 3 floats per vertex, 4 vertices
-  std::vector<Vec3f> verts;
-  verts.push_back(Vec3f(-10, 0, 0));
-  verts.push_back(Vec3f(10, 0, 0));
+/*
+void loadTranslationsToGPU() { // no signature currently
+//  for (int i = -numBoids/2; i < numBoids/2; i++) { // y
+//    for (int j = -numBoids/2; j < numBoids/2; j++) { // x
+  float x = float(-numBoids);
+  float y = 0.f;
 
-  glBindBuffer(GL_ARRAY_BUFFER, box_vertBufferID);
+  for (int i = 0; i < numBoids; i++) { // x
+      translations.push_back(Vec3f(x, y, 0.f));
+      x += 2.f;
+  }
+//  }
+glm::vec2 translations2[100];
+int index = 0;
+GLfloat offset = 0.1f;
+Boid* boid;
+b.Boids.clear();
+
+for(GLint y = -10; y < 10; y += 2)
+{
+    for(GLint x = -10; x < 10; x += 2)
+    {
+        glm::vec2 translation;
+        translation.x = (GLfloat)x / 10.0f + offset;
+        translation.y = (GLfloat)y / 10.0f + offset;
+        translations2[index++] = translation;
+
+        boid = new Boid(Vec3f(translation.x,translation.y,0.f));
+        b.Boids.push_back(boid);
+    }
+}
+
+  glGenBuffers(1, &ball_vertBufferID); // replace with instanceVBO
+  glBindBuffer(GL_ARRAY_BUFFER, ball_vertBufferID);
   glBufferData(GL_ARRAY_BUFFER,
-               sizeof(Vec3f) * 2, // byte size of Vec3f, 4 of them
-               verts.data(),      // pointer (Vec3f*) to contents of verts
+               sizeof(glm::vec2) * 100, // byte size of Vec3f
+               &translations2[0],      // pointer (Vec3f*) to contents of verts
+               GL_STATIC_DRAW);   // Usage pattern of GPU buffer
+  glBindBuffer(GL_ARRAY_BUFFER, 0);
+  cout << "after bind: " << index << endl;
+
+}*/
+
+void loadBallGeometryToGPU() {
+  glBindBuffer(GL_ARRAY_BUFFER, ball_vertBufferID);
+  glBufferData(GL_ARRAY_BUFFER,
+               sizeof(Vec3f) * sphere.size(), // byte size of Vec3f, 4 of them
+               sphere.data(),      // pointer (Vec3f*) to contents of verts
                GL_STATIC_DRAW);   // Usage pattern of GPU buffer
 }
-*/
+
 void setupVAO() {
   glBindVertexArray(vaoID);
 
+  // vertices of shape
   glEnableVertexAttribArray(0); // match layout # in shader
   glBindBuffer(GL_ARRAY_BUFFER, vertBufferID);
   glVertexAttribPointer(0,        // attribute layout # above
@@ -231,13 +295,41 @@ void setupVAO() {
                         GL_FLOAT, // type of components
                         GL_FALSE, // need to be normalized?
                         0,        // stride
+            //  instancing test          5*sizeof(GL_FLOAT),        // stride
                         (void *)0 // array buffer offset
                         );
-/*
-  glBindVertexArray(box_vaoID);
+/* Stuff that was used to try instancing
+  glEnableVertexAttribArray(1); // match layout # in shader
+  glVertexAttribPointer(1,        // attribute layout # above
+                        3,        // # of components (ie XYZ )
+                        GL_FLOAT, // type of components
+                        GL_FALSE, // need to be normalized?
+                        5*sizeof(GL_FLOAT),        // stride
+                        (void *)(2*sizeof(GL_FLOAT)) // array buffer offset
+                        );
+
+  // Set instance data
+  glEnableVertexAttribArray(2); // match layout # in shader
+  glBindBuffer(GL_ARRAY_BUFFER, ball_vertBufferID);
+  glVertexAttribPointer(2,        // attribute layout # above
+                        2,        // # of components (ie XYZ )
+                        GL_FLOAT, // type of components
+                        GL_FALSE, // need to be normalized?
+                        2*sizeof(GL_FLOAT),        // stride
+                        (void *)0 // array buffer offset
+                        );
+
+  glBindBuffer(GL_ARRAY_BUFFER, 0);
+  cout << "getting here" << endl;
+
+ glVertexAttribDivisor(2, 1); // Tell OpenGL this is an instanced vertex attribute.
+ glBindVertexArray(0); */
+
+
+  glBindVertexArray(ball_vaoID);
 
   glEnableVertexAttribArray(0); // match layout # in shader
-  glBindBuffer(GL_ARRAY_BUFFER, box_vertBufferID);
+  glBindBuffer(GL_ARRAY_BUFFER, ball_vertBufferID);
   glVertexAttribPointer(0,        // attribute layout # above
                         3,        // # of components (ie XYZ )
                         GL_FLOAT, // type of components
@@ -247,7 +339,7 @@ void setupVAO() {
                         );
 
   glBindVertexArray(0); // reset to default
-  */
+
 }
 
 void reloadProjectionMatrix() {
@@ -267,7 +359,7 @@ void reloadProjectionMatrix() {
 
 void loadModelViewMatrix() {
   M = IdentityMatrix();
-  box_M = IdentityMatrix();
+  ball_M = IdentityMatrix();
   // view doesn't change, but if it did you would use this
   V = camera.lookatMatrix();
 }
@@ -286,7 +378,6 @@ void reloadMVPUniform() {
   // Introduce instancing somewhere here:
   // Call glUniformMatrix4fv and then perform a new translate and rotation
   // matrix on the boid and then draw
-  // What is this saving though?
   glUniformMatrix4fv(id,        // ID
                      1,         // only 1 matrix
                      GL_TRUE,   // transpose matrix, Mat4f is row major
@@ -307,12 +398,11 @@ void generateIDs() {
   std::string vsSource = loadShaderStringfromFile("./shaders/basic_vs.glsl");
   std::string fsSource = loadShaderStringfromFile("./shaders/basic_fs.glsl");
   basicProgramID = CreateShaderProgram(vsSource, fsSource);
-
   // VAO and buffer IDs given from OpenGL
   glGenVertexArrays(1, &vaoID);
-  glGenBuffers(1, &vertBufferID);
-  /*glGenVertexArrays(1, &box_vaoID);
-  glGenBuffers(1, &box_vertBufferID);*/
+  glGenBuffers(1, &vertBufferID); // VBO
+  glGenVertexArrays(1, &ball_vaoID);
+  glGenBuffers(1, &ball_vertBufferID);
 }
 
 void deleteIDs() {
@@ -320,8 +410,8 @@ void deleteIDs() {
 
   glDeleteVertexArrays(1, &vaoID);
   glDeleteBuffers(1, &vertBufferID);
-/*  glDeleteVertexArrays(1, &box_vaoID);
-  glDeleteBuffers(1, &box_vertBufferID);*/
+  glDeleteVertexArrays(1, &ball_vaoID);
+  glDeleteBuffers(1, &ball_vertBufferID);
 }
 
 void init() {
@@ -334,9 +424,12 @@ void init() {
   generateIDs();
   setupVAO();
 
+  initBoids();
+  // The translations that were for instancing
+  //  loadTranslationsToGPU() ;
   getBoidGeomPoints();
   loadBoidGeometryToGPU();
-  //loadBoxGeometryToGPU();
+  loadBallGeometryToGPU();
 
   loadModelViewMatrix();
   reloadProjectionMatrix();
@@ -386,12 +479,12 @@ int main(int argc, char **argv) {
 
   // Read initial states and parameters
   readFile("boids1.txt");
-
+  readObj("pokeball.obj");
   // Initialize all the geometry, and load it once to the GPU
-  init(); // our own initialize stuff func
+  init();
 
   // Variables needed in loop
-  float deltaT = 1.f;
+  float deltaT = 0.09f;
   int i;
   int j;
   float dist; // used for distance between two boids
@@ -400,8 +493,11 @@ int main(int argc, char **argv) {
   Vec3f Xj; // position of boid j
   Vec3f F = Vec3f(0,0,0); // force being accumulated
   Vec3f V = Vec3f(0,0,0);
-  Vec3f Vc = Vec3f(0,0,0);
-  int r = 0;
+  Vec3f vNeighbours; // velocity of all neighbours
+  Vec3f averageOfNeighbours = Vec3f(0,0,0);
+  Vec3f Vc = Vec3f(0,0,0); // used as a current velocity placeholder
+  float r = 0.f;
+  int count = 0;
   Boid* boidi;
 
   // Main running window loop
@@ -409,36 +505,49 @@ int main(int argc, char **argv) {
          !glfwWindowShouldClose(window)) {
 
     if (g_play) {
-  //    for(int iter = 0; iter < 10; ++iter) {
-
-        // go through every pair and accumulate forces
         for (i = 0; i < b.Boids.size(); i++) {
+          vNeighbours.zero();
+          count = 0;
           // get average of boids within rC
-          for (j + 1; j < b.Boids.size(); j++) {
-            V += b.Boids[i]->getVelocity();
-          }
-          V = V/b.Boids.size();
-
           for (j = i + 1; j < b.Boids.size(); j++) {
             Xi = b.Boids[i]->getPos();
             Xj = b.Boids[j]->getPos();
             dist = Xi.distance(Xj); // distance between the current pair
-            dir = (Xi - Xj)/dist;
-          //  cout << "distance bw i.dis(j): " << dist << endl;
-          // cout << "dir is " << dir << endl;
-            if (dist < rA) {
-              r = dist / rA;
-              // F = pow((1-r), 3) * (3r + 1)
-              F = favoid(dist) * dir;
-            } else if (dist < rC) {
-      //        Vc = V - b.Boids[i]->getVelocity();
-      //        F = favoid(dist) * Vc; // * Vc***
-            } else if (dist < rG) {
-              F = -favoid(dist) * dir;
-            } else {
-              F = Vec3f(0.f, 0.f, 0.f); // the two boids ignore each other
+            if (dist > rA && dist < rC) {
+              vNeighbours = vNeighbours + b.Boids[j]->getVelocity();
+              count = count + 1;
             }
-    //        cout << "final F: " << F << endl;
+          }
+          // go through every pair and accumulate forces
+          for (j = i + 1; j < b.Boids.size(); j++) {
+            Xi = b.Boids[i]->getPos();
+            Xj = b.Boids[j]->getPos();
+            dist = Xi.distance(Xj); // distance between the current pair
+
+            if (dist <= 0) {
+              F.zero();
+            }
+            else {
+              dir = (Xi - Xj)/dist;
+              if (dist < rA) {
+                r = dist / rA; // try changing this
+                F = favoid(dist) * dir;
+              } else if (dist < rC) {
+                if (count > 0) {
+                  // if there are pairs within cohesion distance, use their average
+                  averageOfNeighbours = vNeighbours/count;
+                  averageOfNeighbours.normalized();
+                  Vc = (averageOfNeighbours - b.Boids[i]->getVelocity());
+                  F = fcohesion(dist) * Vc;
+                } else {
+                  F.zero(); // no one to match velocities with
+                }
+              } else if (dist < rG) {
+                F = -fgather(dist) * dir;
+              } else {
+                F.zero(); // the two boids ignore each other
+              }
+            }
 
             b.Boids[i]->setForce(b.Boids[i]->getForce() + F); // add the total force to one boid
             b.Boids[j]->setForce(b.Boids[j]->getForce() - F); // subtract the total force from the other
@@ -449,32 +558,24 @@ int main(int argc, char **argv) {
         for (i = 0; i < b.Boids.size(); i++) {
           boidi = b.Boids[i];
           F = boidi->getForce();
-  //        cout << "force of boid " << i << " is " << F << endl;
-          // add gravity
-          F = clamp(F, 5); // change to Fmax read in
-  //        cout << "clamped f " << i << " is " << F << endl;
-
+          F = clamp(F, Fmax); // change to Fmax read in
           // integrate
           // below, 1 is used as the mass for this simulation
           boidi->setVelocity(boidi->getVelocity() + (F/boidi->getMass())*deltaT); // F/m*dt gives new velocity
           V = boidi->getVelocity();
-    //      cout << "new vel of boid " << i << " is " << V << endl;
-          V = clamp(V, 5);
-  //        cout << "clamped v " << i << " is " << V << endl;
+          V = clamp(V, Vmax);
           boidi->setVelocity(V);
           boidi->setPos(boidi->getPos() + (V*deltaT));
-//          cout << "new pos of boid " << i << " is " << boidi->getPos() << endl;
           keepInBounds(boidi);
           boidi->resetForce();
           // update (Mi);
-          //  animateBoid(t); // if needed for later
         }
-  //    }
     }
 
     // Make geometry based on the current positions of all boids
     getBoidGeomPoints();
     loadBoidGeometryToGPU();
+    //loadBallGeometryToGPU - to use later if getting the sphere to move
 
     displayFunc();
     moveCamera();
@@ -489,49 +590,45 @@ int main(int argc, char **argv) {
   return 0;
 }
 
-void animateBoid(float t) {
-  M = RotateAboutYMatrix(100 * t);
-
-  float s = (std::sin(t) + 1.f) / 2.f;
-  float x = (1 - s) * (10) + s * (-10);
-
-  M = TranslateMatrix(x, 0, 0) * M;
-
-  setupModelViewProjectionTransform();
-  reloadMVPUniform();
-}
-
 Vec3f clamp(Vec3f f, float fmax) {
   if (f.x() > fmax) {
     f.x() = fmax;
+  } else if (f.x() < -fmax) {
+    f.x() = -fmax;
   }
   if (f.y() > fmax) {
     f.y() = fmax;
+  } else if (f.y() < -fmax) {
+    f.y() = -fmax;
   }
   if (f.z() > fmax) {
     f.z() = fmax;
+  } else if (f.z() < -fmax) {
+    f.z() = -fmax;
   }
   return f;
 }
 
 float favoid(float distance) {
+  float r = distance / rA;
   if (distance <= 1) {
-    return 0.f;
+    return wA*1.f;
   } else {
-    return (1/(pow(distance, 2))); // 1/x^2 function
+    return wA * pow((1-r), 3) * (3*r + 1);
+    // A different function that was used
+    //wA * (1/(pow(distance, 2))); // 1/x^2 function
   }                                // return force value of function
 }
 
 float fcohesion(float distance) {
-  // change this
-  return (1/(pow(distance, 2))); // 1/x^2 function
-}                                // return force value of function
+  return wC*(distance); // x function
+}              // return force value of function
 
 float fgather(float distance) {
   if (distance <= 1) {
-    return 0.f;
+    return wG*1.f;
   } else {
-    return (1/(pow(distance, 2))); // 1/x^2 function
+    return wG*(1/(pow(distance, 2))); // 1/x^2 function
   }                                // return force value of function
 }
 
@@ -540,56 +637,80 @@ void keepInBounds(Boid* b) {
   Vec3f vel = b->getVelocity();
 
   if (pos.x() > edge) {
-    pos.x() = edge;
+    pos.x() = edge-1;
     vel.x() = -vel.x();
   } else if (pos.x() < -edge) {
-    pos.x() = -edge;
+    pos.x() = -(edge-1);
     vel.x() = -vel.x();
   }
 
   if (pos.y() > edge) {
-    pos.y() = edge;
+    pos.y() = edge-1;
     vel.y() = -vel.y();
   } else if (pos.y() < -edge) {
-    pos.y() = -edge;
+    pos.y() = -(edge-1);
     vel.y() = -vel.y();
   }
 
   if (pos.z() > edge) {
-    pos.z() = edge;
+    pos.z() = edge-1;
     vel.z() = -vel.z();
   } else if (pos.z() < -edge) {
-    pos.z() = -edge;
+    pos.z() = -(edge-1);
     vel.z() = -vel.z();
   }
   b->setPos(pos);
   b->setVelocity(vel);
 }
 
+void initBoids() {
+  Boid* boid;
+  float spawn = edge -2;
+  float x = -spawn;
+  float y = spawn;
+  float z = 0.f;
+
+  for (int i = 0; i < numBoids; i++) {
+    boid = new Boid(Vec3f(x,y,z));
+    b.Boids.push_back(boid);
+    x = x + 5.f;
+    if (x >= spawn) { // put on the next row down
+      x = -spawn;
+      y = y - 5.f;
+    }
+  }
+
+  for (int i = 0; i < b.Boids.size(); i++) {
+    // get average of boids within rC
+    for (int j = i + 1; j < b.Boids.size(); j++) {
+      Vec3f Xi = b.Boids[i]->getPos();
+      Vec3f Xj = b.Boids[j]->getPos();
+      float dist = Xi.distance(Xj); // distance between the current pair
+    }
+  }
+}
+
 void getBoidGeomPoints() {
   boidGeomPoints.clear();
   Vec3f boidPos;
+  Vec3f vel;
 
   for (int i = 0; i < b.Boids.size(); i++) {
     boidPos = b.Boids[i]->getPos();
+    vel = b.Boids[i]->getVelocity();
+
     boidGeomPoints.push_back(Vec3f(boidPos.x()-0.5f, boidPos.y(), boidPos.z()));
     boidGeomPoints.push_back(Vec3f(boidPos.x()+1.f, boidPos.y()+0.5f, boidPos.z()));
     boidGeomPoints.push_back(Vec3f(boidPos.x()+1.f, boidPos.y()-0.5f, boidPos.z()));
     // Push the nose (x position) out 0.5 to the left (x-0.5),
-    // and the tail points 2 back (x+2) and 1 up (y+1) and
-    // down (y-1), respectively
+    // and the tail points 1 back (x+1) and 0.5 up (y+0.5) and
+    // down (y-0.5), respectively
   }
 }
 
 void readFile(string filename) {
   ifstream file(filename);
   char input;
-  float x;
-  float y;
-  float z;
-  Boid *boid;
-
-  b.Boids.clear();
 
   if (file.is_open()) {
     file >> input;
@@ -597,11 +718,6 @@ void readFile(string filename) {
     while (!file.eof()) {
       if (input == 'N') {
         file >> numBoids;
-        for (int i = 0; i < numBoids; i++) {
-          file >> x >> y >> z;
-          boid = new Boid(Vec3f(x,y,z));
-          b.Boids.push_back(boid);
-        }
       } else if(input == 'A') {
           file >> rA;
       } else if(input == 'C') {
@@ -618,6 +734,38 @@ void readFile(string filename) {
           file >> wC;
       } else if(input == 'T') {
           file >> wG;
+      } else if(input == 'E') {
+          file >> edge;
+      }
+      file >> input;
+    }
+    file.close();
+  }
+  else {
+    cout << "Unable to open file!" << endl;
+  }
+}
+
+void readObj(string filename) {
+  ifstream file(filename);
+  char input;
+  float x;
+  float y;
+  float z;
+
+  if (file.is_open()) {
+    file >> input;
+
+    while (!file.eof()) {
+      if (input == 'v') {
+        file >> x;
+        file >> y;
+        file >> z;
+        x *= 0.1f;
+        y *= 0.1f;
+        z *= 0.1f;
+
+        sphere.push_back(Vec3f(x,y,z));
       }
       file >> input;
     }
